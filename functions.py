@@ -6,7 +6,7 @@
 
 import logging
 import operator
-import os
+import os, sys
 from copy import deepcopy
 
 import numpy as np
@@ -22,10 +22,15 @@ from utils.inception_score import get_inception_score
 logger = logging.getLogger(__name__)
 
 
-def train_shared(args, gen_net: nn.Module, dis_net: nn.Module, g_loss_history, d_loss_history, controller, gen_optimizer
-                 , dis_optimizer, train_loader, prev_hiddens=None, prev_archs=None):
+def train_shared(args, gen_net: nn.Module, dis_net: nn.Module,
+                 g_loss_history, d_loss_history, controller, gen_optimizer,
+                 dis_optimizer, train_loader,
+                 prev_hiddens=None, prev_archs=None,
+                 logger=None, stdout=sys.stdout):
     dynamic_reset = False
-    logger.info('=> train shared GAN...')
+    if args.train_shared_dummy:
+        return dynamic_reset
+    # logger.info('=> train shared GAN...')
     step = 0
     gen_step = 0
 
@@ -35,7 +40,9 @@ def train_shared(args, gen_net: nn.Module, dis_net: nn.Module, g_loss_history, d
 
     # eval mode
     controller.eval()
-    for epoch in range(args.shared_epoch):
+    for epoch in tqdm(range(args.shared_epoch), desc='train_shared',
+                      file=stdout):
+        print('', file=stdout)
         for iter_idx, (imgs, _) in enumerate(train_loader):
 
             # sample an arch
@@ -90,17 +97,19 @@ def train_shared(args, gen_net: nn.Module, dis_net: nn.Module, g_loss_history, d
 
             # verbose
             if gen_step and iter_idx % args.print_freq == 0:
-                logger.info(
-                    "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" %
-                    (epoch, args.shared_epoch, iter_idx % len(train_loader), len(train_loader), d_loss.item(),
-                     g_loss.item()))
+                print('\r',
+                      end="[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" %
+                          (epoch, args.shared_epoch, iter_idx % len(train_loader), len(train_loader), d_loss.item(),
+                           g_loss.item()),
+                      file=stdout, flush=True)
+
 
             # check window
             if g_loss_history.is_full():
                 if g_loss_history.get_var() < args.dynamic_reset_threshold \
                         or d_loss_history.get_var() < args.dynamic_reset_threshold:
                     dynamic_reset = True
-                    logger.info("=> dynamic resetting triggered")
+                    logger.info("\n=> dynamic resetting triggered")
                     g_loss_history.clear()
                     d_loss_history.clear()
                     return dynamic_reset
@@ -186,7 +195,11 @@ def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optim
         writer_dict['train_global_steps'] = global_steps + 1
 
 
-def train_controller(args, controller, ctrl_optimizer, gen_net, prev_hiddens, prev_archs, writer_dict):
+def train_controller(args, controller, ctrl_optimizer,
+                     gen_net, prev_hiddens, prev_archs, writer_dict,
+                     logger, stdout=sys.stdout):
+    if args.train_controller_dummy:
+        return
     logger.info("=> train controller...")
     writer = writer_dict['writer']
     baseline = None
@@ -198,7 +211,8 @@ def train_controller(args, controller, ctrl_optimizer, gen_net, prev_hiddens, pr
     gen_net.eval()
 
     cur_stage = controller.cur_stage
-    for step in range(args.ctrl_step):
+    for step in tqdm(range(args.ctrl_step), desc='train_controller',
+                     file=stdout):
         controller_step = writer_dict['controller_steps']
         archs, selected_log_probs, entropies = controller.sample(args.ctrl_sample_batch, prev_hiddens=prev_hiddens,
                                                                  prev_archs=prev_archs)
@@ -206,7 +220,8 @@ def train_controller(args, controller, ctrl_optimizer, gen_net, prev_hiddens, pr
         for arch in archs:
             logger.info(f'arch: {arch}')
             gen_net.set_arch(arch, cur_stage)
-            is_score = get_is(args, gen_net, args.rl_num_eval_img)
+            is_score = get_is(
+                args, gen_net, args.rl_num_eval_img, stdout=stdout)
             logger.info(f'get Inception score of {is_score}')
             cur_batch_rewards.append(is_score)
         cur_batch_rewards = torch.tensor(cur_batch_rewards, requires_grad=False).cuda()
@@ -238,7 +253,7 @@ def train_controller(args, controller, ctrl_optimizer, gen_net, prev_hiddens, pr
         writer_dict['controller_steps'] = controller_step + 1
 
 
-def get_is(args, gen_net: nn.Module, num_img):
+def get_is(args, gen_net: nn.Module, num_img, stdout=sys.stdout):
     """
     Get inception score.
     :param args:
@@ -262,7 +277,7 @@ def get_is(args, gen_net: nn.Module, num_img):
 
     # get inception score
     logger.info('calculate Inception score...')
-    mean, std = get_inception_score(img_list)
+    mean, std = get_inception_score(img_list, stdout=stdout)
 
     return mean
 

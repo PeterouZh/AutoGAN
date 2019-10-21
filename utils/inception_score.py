@@ -26,7 +26,7 @@ config.gpu_options.allow_growth = True
 
 # Call this function with list of images. Each of elements should be a
 # numpy array with values ranging from 0 to 255.
-def get_inception_score(images, splits=10):
+def get_inception_score(images, splits=10, stdout=sys.stdout):
     assert (type(images) == list)
     assert (type(images[0]) == np.ndarray)
     assert (len(images[0].shape) == 3)
@@ -40,12 +40,18 @@ def get_inception_score(images, splits=10):
     with tf.Session(config=config) as sess:
         preds = []
         n_batches = int(math.ceil(float(len(inps)) / float(bs)))
-        for i in tqdm(range(n_batches), desc="Calculate inception score"):
-            sys.stdout.flush()
+        # for i in tqdm(range(n_batches), desc="Calculate inception score",
+        #               file=stdout):
+        for i in range(n_batches):
+            print('\r', end='Calculate inception score [%d/%d]'%(i, n_batches),
+                  file=stdout)
+            stdout.flush()
+            # sys.stdout.flush()
             inp = inps[(i * bs):min((i + 1) * bs, len(inps))]
             inp = np.concatenate(inp, 0)
             pred = sess.run(softmax, {'ExpandDims:0': inp})
             preds.append(pred)
+        print('', file=stdout)
         preds = np.concatenate(preds, 0)
         scores = []
         for i in range(splits):
@@ -59,8 +65,9 @@ def get_inception_score(images, splits=10):
 
 
 # This function is called automatically.
-def _init_inception():
+def _init_inception(tf_inception_model_dir):
     global softmax
+    MODEL_DIR = tf_inception_model_dir
     if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)
     filename = DATA_URL.split('/')[-1]
