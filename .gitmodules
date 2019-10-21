@@ -1,0 +1,6 @@
+[submodule "submodule/template_lib"]
+	path = submodule/template_lib
+	url = https://github.com/PeterouZh/template_lib.git
+[submodule "AutoGAN-exp"]
+	path = AutoGAN-exp
+	url = https://github.com/PeterouZh/AutoGAN-exp.git
