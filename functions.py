@@ -120,15 +120,18 @@ def train_shared(args, gen_net: nn.Module, dis_net: nn.Module,
 
 
 def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optimizer, gen_avg_param, train_loader,
-          epoch, writer_dict, schedulers=None):
+          epoch, writer_dict, schedulers=None,
+          logger=None, stdout=sys.stdout):
+    if args.train_dummy:
+      return
     writer = writer_dict['writer']
     gen_step = 0
 
     # train mode
     gen_net = gen_net.train()
     dis_net = dis_net.train()
-
-    for iter_idx, (imgs, _) in enumerate(tqdm(train_loader)):
+    pbar = tqdm(train_loader, file=stdout, position=0)
+    for iter_idx, (imgs, _) in enumerate(pbar):
         global_steps = writer_dict['train_global_steps']
 
         # Adversarial ground truths
@@ -188,11 +191,12 @@ def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optim
 
         # verbose
         if gen_step and iter_idx % args.print_freq == 0:
-            tqdm.write(
-                "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" %
-                (epoch, args.max_epoch, iter_idx % len(train_loader), len(train_loader), d_loss.item(), g_loss.item()))
+            desc="[D loss: %f, G loss: %f]" % (d_loss.item(), g_loss.item())
+            pbar.set_description(desc)
+            pass
 
         writer_dict['train_global_steps'] = global_steps + 1
+    print('', file=stdout)
 
 
 def train_controller(args, controller, ctrl_optimizer,
@@ -334,6 +338,73 @@ def validate(args, fixed_z, fid_stat, gen_net: nn.Module,
     writer.add_scalar('Inception_score/mean', mean, global_steps)
     writer.add_scalar('Inception_score/std', std, global_steps)
     writer.add_scalar('FID_score', fid_score, global_steps)
+
+    writer_dict['valid_global_steps'] = global_steps + 1
+
+    return mean, fid_score
+
+
+def validate_v1(args, fixed_z, fid_stat, gen_net: nn.Module,
+                writer_dict, clean_dir=True,
+                logger=None, stdout=sys.stdout, save_fid_img=False,
+                IS=None, FID=None, myargs=None):
+    writer = writer_dict['writer']
+    global_steps = writer_dict['valid_global_steps']
+
+    # eval mode
+    gen_net = gen_net.eval()
+
+    # generate images
+    sample_imgs = gen_net(fixed_z)
+    img_grid = make_grid(sample_imgs, nrow=5, normalize=True, scale_each=True)
+
+    # get fid and inception score
+    fid_buffer_dir = os.path.join(
+        args.path_helper['sample_path'], 'fid_buffer')
+    os.makedirs(fid_buffer_dir, exist_ok=True)
+
+    eval_iter = args.num_eval_imgs // args.eval_batch_size
+    img_list = list()
+    for iter_idx in range(eval_iter):
+        print('\r',
+              end='sample images [%d/%d]'%(iter_idx*args.eval_batch_size,
+                                           eval_iter*args.eval_batch_size),
+              file=stdout, flush=True)
+        z = torch.cuda.FloatTensor(np.random.normal(0, 1, (args.eval_batch_size, args.latent_dim)))
+
+        # Generate a batch of images
+        gen_imgs = gen_net(z).mul_(127.5).add_(127.5).clamp_(0.0, 255.0)\
+            .permute(0, 2, 3, 1).to('cpu', torch.uint8).numpy()
+        if save_fid_img:
+            for img_idx, img in enumerate(gen_imgs):
+                file_name = os.path.join(fid_buffer_dir, f'iter{iter_idx}_b{img_idx}.png')
+                imsave(file_name, img)
+        img_list.extend(list(gen_imgs))
+    print('', file=stdout)
+    # get inception score
+    mean, std = IS.get_inception_score(img_list, stdout=stdout)
+    print(f"Inception score: mean={mean}, std={std}")
+
+    # get fid score
+    fid_score = FID.calculate_fid_given_paths(
+        fid_buffer=img_list, fid_stat=fid_stat, stdout=stdout)
+    print(f"FID score: {fid_score}")
+
+    del img_list
+    if save_fid_img and clean_dir:
+        os.system('rm -r {}'.format(fid_buffer_dir))
+    elif save_fid_img:
+        logger.info(f'=> sampled images are saved to {fid_buffer_dir}')
+
+    writer.add_image('sampled_images', img_grid, global_steps)
+    writer.add_scalar('Inception_score/mean', mean, global_steps)
+    writer.add_scalar('Inception_score/std', std, global_steps)
+    writer.add_scalar('FID_score', fid_score, global_steps)
+    if myargs is not None:
+        myargs.textlogger.log(
+            itr=global_steps, IS_mean=mean, IS_std=std,
+            FID=fid_score)
+
 
     writer_dict['valid_global_steps'] = global_steps + 1
 
