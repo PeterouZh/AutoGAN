@@ -1,0 +1,36 @@
+version: '2.3'
+services:
+  autogan:
+    #image: tensorflow/tensorflow:1.11.0-gpu
+    build: .
+    user: root:root
+    #container_name: tf_1_11_py3-DCGAN-LSGAN-WGAN-WGAN-GP-Tensorflow
+    network_mode: "host"
+    ipc: host
+    ports:
+      - "8888:8888"
+      - "8889:8889"
+    volumes:
+      - .:/opt/project
+      - ~/.keras:/root/.keras
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    working_dir: "/opt/project"
+    runtime: nvidia
+    environment:
+      - DISPLAY
+      - QT_X11_NO_MITSHM=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONPATH=/opt
+    entrypoint: ''
+#    entrypoint: bash /maskrcnn-benchmark/entrypoint.sh
+    command: "jupyter notebook --allow-root --ip=127.0.0.1"
+
+    #command: >
+    #  bash -c "jupyter notebook --allow-root --ip=127.0.0.1 && echo Block"
+
+
+
+
+
+
+
