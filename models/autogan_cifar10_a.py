@@ -75,3 +75,44 @@ class Discriminator(nn.Module):
         output = self.l5(h)
 
         return output
+
+
+def test_autogan_cifar10_a_Generator(args1, myargs):
+    import cfg, os, torch
+    import numpy as np
+    myargs.config = getattr(myargs.config, 'train_autogan_cifar10_a')
+    myargs.args = args1
+    args = cfg.parse_args()
+    for k, v in myargs.config.items():
+        setattr(args, k, v)
+
+    args.tf_inception_model_dir = os.path.expanduser(
+        args.tf_inception_model_dir)
+    args.fid_stat = os.path.expanduser(args.fid_stat)
+    args.data_path = os.path.expanduser(args.data_path)
+
+    gen_net = Generator(args=args).cuda()
+    z = torch.cuda.FloatTensor(
+        np.random.normal(0, 1, (16, args.latent_dim)))
+    x = gen_net(z)
+
+    import torchviz
+    g = torchviz.make_dot(x)
+    g.view()
+    pass
+
+
+def test_autogan_cifar10_a_Discriminator(args1, myargs):
+    import cfg, os, torch
+    import numpy as np
+    args = getattr(myargs.config, 'test_autogan_cifar10_a_Discriminator')
+
+    dis_net = Discriminator(args=args).cuda()
+    x = torch.cuda.FloatTensor(np.random.normal(0, 1, (16, 3, 32, 32)))
+    x = dis_net(x)
+
+    import torchviz
+    g = torchviz.make_dot(x)
+    g.view()
+    pass
+
