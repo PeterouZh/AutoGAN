@@ -111,7 +111,7 @@ def train_shared(args, gen_net: nn.Module, dis_net: nn.Module, g_loss_history, d
 
 
 def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optimizer, gen_avg_param, train_loader,
-          epoch, writer_dict, schedulers=None):
+          epoch, writer_dict, schedulers=None, myargs=None):
     writer = writer_dict['writer']
     gen_step = 0
 
@@ -119,7 +119,7 @@ def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optim
     gen_net = gen_net.train()
     dis_net = dis_net.train()
 
-    for iter_idx, (imgs, _) in enumerate(tqdm(train_loader)):
+    for iter_idx, (imgs, _) in enumerate(tqdm(train_loader, file=myargs.stdout)):
         global_steps = writer_dict['train_global_steps']
 
         # Adversarial ground truths
@@ -181,7 +181,8 @@ def train(args, gen_net: nn.Module, dis_net: nn.Module, gen_optimizer, dis_optim
         if gen_step and iter_idx % args.print_freq == 0:
             tqdm.write(
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]" %
-                (epoch, args.max_epoch, iter_idx % len(train_loader), len(train_loader), d_loss.item(), g_loss.item()))
+                (epoch, args.max_epoch, iter_idx % len(train_loader), len(train_loader), d_loss.item(), g_loss.item()),
+                file=myargs.stdout)
 
         writer_dict['train_global_steps'] = global_steps + 1
 
@@ -267,7 +268,7 @@ def get_is(args, gen_net: nn.Module, num_img):
     return mean
 
 
-def validate(args, fixed_z, fid_stat, gen_net: nn.Module, writer_dict, clean_dir=True):
+def validate(args, fixed_z, fid_stat, gen_net: nn.Module, writer_dict, clean_dir=True, myargs=None):
     writer = writer_dict['writer']
     global_steps = writer_dict['valid_global_steps']
 
@@ -284,7 +285,7 @@ def validate(args, fixed_z, fid_stat, gen_net: nn.Module, writer_dict, clean_dir
 
     eval_iter = args.num_eval_imgs // args.eval_batch_size
     img_list = list()
-    for iter_idx in tqdm(range(eval_iter), desc='sample images'):
+    for iter_idx in tqdm(range(eval_iter), desc='sample images', file=myargs.stdout):
         z = torch.cuda.FloatTensor(np.random.normal(0, 1, (args.eval_batch_size, args.latent_dim)))
 
         # Generate a batch of images
@@ -297,7 +298,7 @@ def validate(args, fixed_z, fid_stat, gen_net: nn.Module, writer_dict, clean_dir
 
     # get inception score
     logger.info('=> calculate inception score')
-    mean, std = get_inception_score(img_list)
+    mean, std = get_inception_score(img_list, stdout=myargs.stdout)
     print(f"Inception score: {mean}")
 
     # get fid score

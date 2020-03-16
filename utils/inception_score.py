@@ -16,7 +16,8 @@ from tqdm import tqdm
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-MODEL_DIR = '/tmp/imagenet'
+# MODEL_DIR = '/tmp/imagenet'
+MODEL_DIR = 'datasets/pagan/tf_inception_model'
 DATA_URL = 'http://download.tensorflow.org/models/image/imagenet/inception-2015-12-05.tgz'
 softmax = None
 
@@ -26,7 +27,7 @@ config.gpu_options.allow_growth = True
 
 # Call this function with list of images. Each of elements should be a
 # numpy array with values ranging from 0 to 255.
-def get_inception_score(images, splits=10):
+def get_inception_score(images, splits=10, stdout=sys.stdout):
     assert (type(images) == list)
     assert (type(images[0]) == np.ndarray)
     assert (len(images[0].shape) == 3)
@@ -40,7 +41,7 @@ def get_inception_score(images, splits=10):
     with tf.Session(config=config) as sess:
         preds = []
         n_batches = int(math.ceil(float(len(inps)) / float(bs)))
-        for i in tqdm(range(n_batches), desc="Calculate inception score"):
+        for i in tqdm(range(n_batches), desc="Calculate inception score", file=stdout):
             sys.stdout.flush()
             inp = inps[(i * bs):min((i + 1) * bs, len(inps))]
             inp = np.concatenate(inp, 0)

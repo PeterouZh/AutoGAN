@@ -24,17 +24,19 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from copy import deepcopy
 
+from template_lib.trainer.base_trainer import summary_dict2txtfig
+
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.benchmark = True
 
 
-def main():
-    args = cfg.parse_args()
+def main(args, myargs):
+
     torch.cuda.manual_seed(args.random_seed)
 
     # set tf env
     _init_inception()
-    inception_path = check_or_download_inception(None)
+    inception_path = check_or_download_inception(args.tf_inception_dir)
     create_inception_graph(inception_path)
 
     # import network
@@ -74,9 +76,11 @@ def main():
 
     # fid stat
     if args.dataset.lower() == 'cifar10':
-        fid_stat = 'fid_stat/fid_stats_cifar10_train.npz'
+        # fid_stat = 'fid_stat/fid_stats_cifar10_train.npz'
+        fid_stat = args.fid_stat
     elif args.dataset.lower() == 'stl10':
-        fid_stat = 'fid_stat/stl10_train_unlabeled_fid_stats_48.npz'
+        # fid_stat = 'fid_stat/stl10_train_unlabeled_fid_stats_48.npz'
+        fid_stat = args.fid_stat
     else:
         raise NotImplementedError(f'no fid stat for {args.dataset.lower()}')
     assert os.path.exists(fid_stat)
@@ -116,28 +120,34 @@ def main():
     else:
         # create new log dir
         assert args.exp_name
-        args.path_helper = set_log_dir('logs', args.exp_name)
-        logger = create_logger(args.path_helper['log_path'])
+        # args.path_helper = set_log_dir('logs', args.exp_name)
+        # logger = create_logger(args.path_helper['log_path'])
+        args.path_helper = set_log_dir(myargs.args.outdir, "AutoGAN")
+        logger = myargs.logger
 
     logger.info(args)
     writer_dict = {
-        'writer': SummaryWriter(args.path_helper['log_path']),
+        # 'writer': SummaryWriter(args.path_helper['log_path']),
+        'writer': myargs.writer,
         'train_global_steps': start_epoch * len(train_loader),
         'valid_global_steps': start_epoch // args.val_freq,
     }
 
     # train loop
-    for epoch in tqdm(range(int(start_epoch), int(args.max_epoch)), desc='total progress'):
+    for epoch in tqdm(range(int(start_epoch), int(args.max_epoch)), desc='total progress', file=myargs.stdout):
         lr_schedulers = (gen_scheduler, dis_scheduler) if args.lr_decay else None
         train(args, gen_net, dis_net, gen_optimizer, dis_optimizer, gen_avg_param, train_loader, epoch, writer_dict,
-              lr_schedulers)
+              lr_schedulers, myargs=myargs)
 
-        if epoch and epoch % args.val_freq == 0 or epoch == int(args.max_epoch)-1:
+        if epoch % args.val_freq == 0 or epoch == int(args.max_epoch)-1:
             backup_param = copy_params(gen_net)
             load_params(gen_net, gen_avg_param)
-            inception_score, fid_score = validate(args, fixed_z, fid_stat, gen_net, writer_dict)
+            inception_score, fid_score = validate(args, fixed_z, fid_stat, gen_net, writer_dict, myargs=myargs)
             logger.info(f'Inception score: {inception_score}, FID score: {fid_score} || @ epoch {epoch}.')
             load_params(gen_net, backup_param)
+            summary_dict = dict(IS_mean=inception_score, FID=fid_score)
+            summary_dict2txtfig(dict_data=summary_dict, prefix="evaltf", step=epoch,
+                                textlogger=myargs.textlogger)
             if fid_score < best_fid:
                 best_fid = fid_score
                 is_best = True
@@ -163,5 +173,21 @@ def main():
         del avg_gen_net
 
 
+def run(argv_str=None):
+  from template_lib.utils.config import parse_args_and_setup_myargs, config2args
+  from template_lib.utils.modelarts_utils import prepare_dataset
+  run_script = os.path.relpath(__file__, os.getcwd())
+  args1, myargs, _ = parse_args_and_setup_myargs(argv_str, run_script=run_script, start_tb=False)
+  myargs.args = args1
+  myargs.config = getattr(myargs.config, args1.command)
+
+  if hasattr(myargs.config, 'datasets'):
+    prepare_dataset(myargs.config.datasets, cfg=myargs.config)
+
+  args = cfg.parse_args([])
+  args = config2args(config=myargs.config.args, args=args)
+
+  main(args, myargs)
+
 if __name__ == '__main__':
-    main()
+  run()
